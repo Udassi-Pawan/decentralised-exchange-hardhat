@@ -87,19 +87,34 @@ contract exchangeNFT is ERC721, ERC721Enumerable, ERC721URIStorage, ERC721Burnab
     }
 }
 
+
 contract exchange  {
     stakeToken mytok  = new stakeToken();
-    exchangeNFT mynft = new exchangeNFT();
-    address public exchangeNftAddr = address(mynft);
+    stakeToken validationTok  = new stakeToken();
+    exchangeNFT mynft;
+    address public exchangeNftAddr;
+    constructor (address _mynft) {
+        mynft = exchangeNFT(_mynft);
+        exchangeNftAddr = _mynft;
+    }
     address public stakeTokenAddr = address(mytok);
+    address public validationTokenAddr = address(validationTok);
 
     uint public nonce;
     mapping (address=> bool) public isAttestor;
    function becomeAttestor() public payable {
        require(msg.value>=1000);
        isAttestor[msg.sender] = true;
-       mytok.mint(msg.sender,msg.value);
+       validationTok.mint(msg.sender,msg.value);
    } 
+   function withdrawValidationTok(uint _value) public payable {
+       require(validationTok.balanceOf(msg.sender)>=_value,"not enough tokens!");
+       validationTok.burnByAdmin(msg.sender,_value);
+       payable(msg.sender).transfer(_value);
+       if(validationTok.balanceOf(msg.sender)<1000) {
+           isAttestor[msg.sender] = false;
+       }
+   }
     
     event nftBurned (address owner,string uri, uint nonce);
 
@@ -121,7 +136,8 @@ contract exchange  {
         mapping (address => bool) hasAttested;
     }
     mapping (uint => thisTransaction) public allTransactions;
-    event transactionAttested (uint nonce);
+
+    event transactionAttested (uint nonce, address requestor);
     function attestTransaction(uint _nonce, string memory _uri , address _owner, uint _amount) public {
         require(isAttestor[msg.sender]);
         require(allTransactions[_nonce].hasAttested[msg.sender] == false);
@@ -137,7 +153,7 @@ contract exchange  {
             }
         }
         if(thisAtt.versionCount==0) {
-        emit transactionAttested(_nonce);
+        emit transactionAttested(_nonce, _owner);
         }
 
         if(done==false) {
@@ -164,19 +180,19 @@ contract exchange  {
             if(allTransactions[_nonce].versions[i].attestCount<max){
                 for(uint j=0;j<allTransactions[_nonce].versions[i].attestCount;j++){
                     address curAtt = allTransactions[_nonce].versions[i].attestors[j];
-                    mytok.burnByAdmin(curAtt,20);
+                    validationTok.burnByAdmin(curAtt,20);
                 }
             }
             else {
                  for(uint j=0;j<allTransactions[_nonce].versions[i].attestCount;j++){
                     address curAtt = allTransactions[_nonce].versions[i].attestors[j];
-                    mytok.mint(curAtt,20);
+                    validationTok.mint(curAtt,20);
             }
         }
       if(allTransactions[_nonce].versions[winner].amount == 0)  mynft.safeMint(allTransactions[_nonce].versions[winner].owner,allTransactions[_nonce].versions[winner].uri);
       else payable(allTransactions[_nonce].versions[winner].owner).transfer(allTransactions[_nonce].versions[winner].amount);  
     }
-
+    delete allTransactions[_nonce];
 }
 struct stake {
     uint tokens;
@@ -240,11 +256,17 @@ mapping(address => loanStruct ) public loan;
 
 function getLoan(uint _amount,uint _period, uint _nftTokenId ) public {
 require(!(loan[msg.sender].set), "applicant already has a loan");
+require(_amount <1001,"loan amount should be less than 1000wei");
+require(_period <3600 ,"loan period should be less than 3600s");
 require(mynft.isApprovedForAll(msg.sender, address(this)));
 mynft.transferFrom(msg.sender,address(this),_nftTokenId);
 loan[msg.sender]= loanStruct(_amount,block.timestamp+_period, _nftTokenId,true);
 payable(msg.sender).transfer(_amount);
+
+if(isUser[msg.sender]==false) {
+isUser[msg.sender] = true;
 users[usersCount++] = msg.sender;
+}
 }
 
 function returnLoan() public payable {
@@ -265,6 +287,6 @@ function buyCollateralNft (address _borrower) public payable {
 
 mapping (uint => address) public users;
 uint public usersCount;
-
+mapping (address => bool ) isUser;
 
 }
